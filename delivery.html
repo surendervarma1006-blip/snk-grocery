@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SNK Delivery Partner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{brand:{50:'#f0fdf4',600:'#16a34a',700:'#15803d'}}}}}</script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+</head>
+<body class="bg-gray-100 min-h-screen">
+<header class="bg-gray-800 text-white px-4 py-3 flex justify-between items-center">
+  <div class="flex items-center gap-2"><img src="logo.jpg" class="w-8 h-8 rounded-full" /><span class="font-bold text-sm">Delivery Partner</span></div>
+  <a href="index.html" class="text-xs text-gray-300">Customer Site</a>
+</header>
+
+<div id="login-box" class="max-w-sm mx-auto mt-10 bg-white rounded-2xl shadow p-5">
+  <h2 class="font-bold text-lg mb-1">Partner Login</h2>
+  <p class="text-xs text-gray-500 mb-4">Demo: phone <b>9000000001</b> / password <b>1234</b></p>
+  <input id="dp-phone" type="tel" placeholder="Phone" class="w-full border rounded-xl px-3 py-2.5 text-sm mb-2" value="9000000001" />
+  <input id="dp-pass" type="password" placeholder="Password" class="w-full border rounded-xl px-3 py-2.5 text-sm mb-3" value="1234" />
+  <button onclick="dpLogin()" class="w-full bg-brand-600 text-white py-2.5 rounded-xl font-semibold">Login</button>
+</div>
+
+<div id="app-box" class="hidden max-w-lg mx-auto p-4">
+  <div class="bg-white rounded-xl p-3 mb-3 flex justify-between items-center shadow-sm">
+    <div><p class="font-semibold text-sm" id="dp-name">Partner</p><p class="text-xs text-gray-500" id="dp-ph"></p></div>
+    <button onclick="dpLogout()" class="text-xs text-red-600">Logout</button>
+  </div>
+  <h3 class="font-semibold text-sm mb-2">Assigned / Active Orders</h3>
+  <div id="dp-orders" class="space-y-2"></div>
+  <p class="text-[11px] text-gray-400 mt-4 text-center">Share live location while delivering. Upload photo after delivery.</p>
+</div>
+
+<script>
+const API='';
+let partner=null, watchId=null;
+
+async function dpLogin(){
+  const phone=document.getElementById('dp-phone').value.trim();
+  const password=document.getElementById('dp-pass').value;
+  const res=await fetch(API+'/api/delivery/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
+  const data=await res.json();
+  if(!res.ok){alert(data.error||'Login failed');return;}
+  partner=data; localStorage.setItem('snk_dp',JSON.stringify(partner));
+  showApp();
+}
+function dpLogout(){ partner=null; localStorage.removeItem('snk_dp'); stopShare(); document.getElementById('login-box').classList.remove('hidden'); document.getElementById('app-box').classList.add('hidden'); }
+
+function showApp(){
+  document.getElementById('login-box').classList.add('hidden');
+  document.getElementById('app-box').classList.remove('hidden');
+  document.getElementById('dp-name').textContent=partner.name;
+  document.getElementById('dp-ph').textContent=partner.phone;
+  loadDPOrders();
+}
+
+async function loadDPOrders(){
+  const all=await fetch(API+'/api/orders').then(r=>r.json());
+  const mine=all.filter(o=>o.delivery_partner===partner.phone || ['Confirmed','Packing','Out for Delivery'].includes(o.status));
+  const box=document.getElementById('dp-orders');
+  if(!mine.length){box.innerHTML='<p class="text-center text-gray-400 text-sm py-6">No active orders</p>';return;}
+  box.innerHTML=mine.map(o=>`
+    <div class="bg-white rounded-xl border p-3 shadow-sm">
+      <div class="flex justify-between"><span class="font-bold text-sm">${o.order_id}</span><span class="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">${o.status}</span></div>
+      <p class="text-xs mt-1">${o.name} · ${o.phone}</p>
+      <p class="text-[11px] text-gray-500">${o.address}</p>
+      <p class="text-xs font-semibold mt-1">₹${o.total}</p>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button onclick="startShare('${o.order_id}')" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg"><i class="fas fa-location-arrow"></i> Share Live Location</button>
+        <button onclick="markOut('${o.order_id}')" class="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg">Out for Delivery</button>
+        <label class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg cursor-pointer">
+          📷 Deliver + Photo
+          <input type="file" accept="image/*" capture="environment" class="hidden" onchange="completeOrder('${o.order_id}',this)" />
+        </label>
+      </div>
+      <p id="loc-${o.order_id}" class="text-[10px] text-gray-400 mt-1"></p>
+    </div>`).join('');
+}
+
+async function markOut(oid){
+  await fetch(API+'/api/orders/'+oid+'/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Out for Delivery',delivery_partner:partner.phone})});
+  loadDPOrders();
+}
+
+function startShare(oid){
+  if(!navigator.geolocation){alert('Location not supported');return;}
+  stopShare();
+  const el=document.getElementById('loc-'+oid);
+  el.textContent='Sharing location...';
+  watchId=navigator.geolocation.watchPosition(async pos=>{
+    const lat=pos.coords.latitude, lng=pos.coords.longitude;
+    el.textContent=`📍 Live: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    await fetch(API+'/api/delivery/location',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:oid,lat,lng})});
+  }, err=>{ el.textContent='Location error: '+err.message; }, {enableHighAccuracy:true, maximumAge:5000});
+}
+function stopShare(){ if(watchId){navigator.geolocation.clearWatch(watchId);watchId=null;} }
+
+async function completeOrder(oid, input){
+  let photo='';
+  if(input.files && input.files[0]){
+    const reader=new FileReader();
+    photo=await new Promise(res=>{ reader.onload=()=>res(reader.result); reader.readAsDataURL(input.files[0]); });
+  }
+  stopShare();
+  await fetch(API+'/api/delivery/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:oid,photo})});
+  alert('Order marked Delivered!');
+  loadDPOrders();
+}
+
+const saved=localStorage.getItem('snk_dp');
+if(saved){ partner=JSON.parse(saved); showApp(); }
+setInterval(()=>{ if(partner) loadDPOrders(); }, 15000);
+</script>
+</body>
+</html>

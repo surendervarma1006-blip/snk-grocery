@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SNK Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{brand:{50:'#f0fdf4',100:'#dcfce7',600:'#16a34a',700:'#15803d',800:'#166534'}}}}}</script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+</head>
+<body class="bg-gray-100 min-h-screen">
+<header class="bg-gray-900 text-white sticky top-0 z-40">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2"><img src="logo.jpg" class="w-8 h-8 rounded-full object-cover" /><span class="font-bold text-sm">SNK Admin</span></div>
+    <div class="flex gap-2 text-xs">
+      <button onclick="showTab('orders')" class="px-2 py-1 rounded bg-gray-700">Orders</button>
+      <button onclick="showTab('products')" class="px-2 py-1 rounded bg-gray-700">Products</button>
+      <button onclick="showTab('settings')" class="px-2 py-1 rounded bg-gray-700">Settings</button>
+      <button onclick="showTab('ratings')" class="px-2 py-1 rounded bg-gray-700">Ratings</button>
+      <a href="index.html" class="px-2 py-1 text-gray-300">← Site</a>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-5xl mx-auto px-4 py-4">
+  <!-- Stats -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+    <div class="bg-white rounded-xl p-3 shadow-sm"><p class="text-[10px] text-gray-500">TOTAL</p><p id="s-total" class="text-xl font-bold">0</p></div>
+    <div class="bg-white rounded-xl p-3 shadow-sm"><p class="text-[10px] text-gray-500">PENDING</p><p id="s-pend" class="text-xl font-bold text-orange-600">0</p></div>
+    <div class="bg-white rounded-xl p-3 shadow-sm"><p class="text-[10px] text-gray-500">DELIVERED</p><p id="s-done" class="text-xl font-bold text-green-600">0</p></div>
+    <div class="bg-white rounded-xl p-3 shadow-sm"><p class="text-[10px] text-gray-500">REVENUE</p><p id="s-rev" class="text-xl font-bold text-brand-700">₹0</p></div>
+  </div>
+
+  <!-- Orders Tab -->
+  <div id="tab-orders" class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="flex border-b text-sm overflow-x-auto">
+      <button class="otab px-4 py-2.5 font-semibold text-brand-700 border-b-2 border-brand-600" data-f="all">All</button>
+      <button class="otab px-4 py-2.5 text-gray-500" data-f="New">New</button>
+      <button class="otab px-4 py-2.5 text-gray-500" data-f="pending">Pending</button>
+      <button class="otab px-4 py-2.5 text-gray-500" data-f="Delivered">Completed</button>
+    </div>
+    <div id="orders-box" class="divide-y max-h-[60vh] overflow-y-auto"></div>
+  </div>
+
+  <!-- Products Tab -->
+  <div id="tab-products" class="hidden bg-white rounded-xl shadow-sm p-4">
+    <h2 class="font-semibold mb-3">Edit Products (price / stock / availability)</h2>
+    <div id="prod-box" class="space-y-2 max-h-[60vh] overflow-y-auto"></div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div id="tab-settings" class="hidden bg-white rounded-xl shadow-sm p-4 space-y-3">
+    <h2 class="font-semibold">Delivery & Offers Settings</h2>
+    <div class="grid sm:grid-cols-2 gap-3 text-sm">
+      <label>Min order amount (₹)<input id="set-min" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Delivery charge (₹)<input id="set-del" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Free delivery above (₹)<input id="set-free" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Offer % off<input id="set-pct" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Offer min order (₹)<input id="set-omin" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Offer text<input id="set-otxt" type="text" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Helpline<input id="set-phone" type="text" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+      <label>Email<input id="set-email" type="text" class="w-full border rounded-lg px-3 py-2 mt-1" /></label>
+    </div>
+    <button onclick="saveSettings()" class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold">Save Settings</button>
+  </div>
+
+  <!-- Ratings Tab -->
+  <div id="tab-ratings" class="hidden bg-white rounded-xl shadow-sm p-4">
+    <h2 class="font-semibold mb-3">Customer Ratings & Reviews</h2>
+    <div id="rate-box" class="space-y-2 max-h-[60vh] overflow-y-auto text-sm"></div>
+  </div>
+</div>
+
+<script>
+const API='', FLOW=['New','Confirmed','Packing','Out for Delivery','Delivered','Cancelled'];
+const SCOLOR={New:'bg-blue-100 text-blue-700',Confirmed:'bg-indigo-100 text-indigo-700',Packing:'bg-yellow-100 text-yellow-800','Out for Delivery':'bg-orange-100 text-orange-700',Delivered:'bg-green-100 text-green-700',Cancelled:'bg-red-100 text-red-700'};
+let orders=[], filter='all', partners=[];
+const fmt=n=>'₹'+Number(n).toLocaleString('en-IN');
+
+async function load(){
+  try{
+    orders=await fetch(API+'/api/orders').then(r=>r.json());
+    partners=await fetch(API+'/api/delivery/partners').then(r=>r.json());
+  }catch(e){orders=[];}
+  const pend=orders.filter(o=>!['Delivered','Cancelled'].includes(o.status)).length;
+  const done=orders.filter(o=>o.status==='Delivered').length;
+  const rev=orders.filter(o=>o.status!=='Cancelled').reduce((s,o)=>s+Number(o.total||0),0);
+  document.getElementById('s-total').textContent=orders.length;
+  document.getElementById('s-pend').textContent=pend;
+  document.getElementById('s-done').textContent=done;
+  document.getElementById('s-rev').textContent=fmt(rev);
+  renderOrders();
+}
+
+function renderOrders(){
+  let list=orders;
+  if(filter==='New') list=orders.filter(o=>o.status==='New');
+  else if(filter==='pending') list=orders.filter(o=>['Confirmed','Packing','Out for Delivery'].includes(o.status));
+  else if(filter==='Delivered') list=orders.filter(o=>o.status==='Delivered');
+  const box=document.getElementById('orders-box');
+  if(!list.length){box.innerHTML='<p class="p-8 text-center text-gray-400 text-sm">No orders</p>';return;}
+  box.innerHTML=list.map(o=>{
+    const items=o.items||[];
+    return `<div class="p-3">
+      <div class="flex flex-wrap justify-between gap-1 mb-1">
+        <span class="font-bold text-sm text-brand-800">${o.order_id}</span>
+        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${SCOLOR[o.status]||''}">${o.status}</span>
+      </div>
+      <p class="text-xs">${o.name} · ${o.phone}</p>
+      <p class="text-[11px] text-gray-500 truncate">${o.address}</p>
+      <p class="text-[11px] text-gray-400 mt-0.5">${items.map(i=>i.qty+'×'+i.name).join(', ')}</p>
+      <div class="flex flex-wrap items-center justify-between gap-2 mt-2">
+        <span class="font-bold text-sm">${fmt(o.total)}</span>
+        <div class="flex gap-1 items-center">
+          <select onchange="updStatus('${o.order_id}',this.value)" class="text-xs border rounded-lg px-1.5 py-1">
+            ${FLOW.map(s=>`<option ${o.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <select onchange="assignDP('${o.order_id}',this.value)" class="text-xs border rounded-lg px-1.5 py-1">
+            <option value="">Assign DP</option>
+            ${partners.map(d=>`<option value="${d.phone}" ${o.delivery_partner===d.phone?'selected':''}>${d.name}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${o.status==='Out for Delivery'?`<p class="text-[10px] text-orange-600 mt-1"><i class="fas fa-location-arrow"></i> Live location active (check customer track)</p>`:''}
+      ${o.delivered_photo?`<p class="text-[10px] text-green-600 mt-1">📷 Delivery photo uploaded</p>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function updStatus(id,st){
+  await fetch(API+'/api/orders/'+id+'/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:st})});
+  load();
+}
+async function assignDP(id,phone){
+  if(!phone)return;
+  await fetch(API+'/api/orders/'+id+'/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Out for Delivery',delivery_partner:phone})});
+  load();
+}
+
+document.querySelectorAll('.otab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.otab').forEach(x=>{x.classList.remove('font-semibold','text-brand-700','border-b-2','border-brand-600');x.classList.add('text-gray-500');});
+    b.classList.add('font-semibold','text-brand-700','border-b-2','border-brand-600'); b.classList.remove('text-gray-500');
+    filter=b.dataset.f; renderOrders();
+  };
+});
+
+function showTab(t){
+  ['orders','products','settings','ratings'].forEach(x=>{
+    document.getElementById('tab-'+x).classList.toggle('hidden', x!==t);
+  });
+  if(t==='products') loadProducts();
+  if(t==='settings') loadSettings();
+  if(t==='ratings') loadRatings();
+}
+
+async function loadProducts(){
+  const prods=await fetch(API+'/api/products').then(r=>r.json());
+  document.getElementById('prod-box').innerHTML=prods.map(p=>`
+    <div class="flex flex-wrap items-center gap-2 border rounded-lg p-2 text-sm">
+      <span class="text-xl">${p.emoji}</span>
+      <span class="font-medium flex-1 min-w-[100px]">${p.name}</span>
+      <label class="text-xs">₹<input type="number" value="${p.price}" class="w-16 border rounded px-1 py-0.5" id="pr-${p.id}" /></label>
+      <label class="text-xs">MRP<input type="number" value="${p.mrp}" class="w-16 border rounded px-1 py-0.5" id="mrp-${p.id}" /></label>
+      <label class="text-xs">Stock<input type="number" value="${p.stock}" class="w-14 border rounded px-1 py-0.5" id="st-${p.id}" /></label>
+      <label class="text-xs flex items-center gap-1"><input type="checkbox" ${p.available?'checked':''} id="av-${p.id}" /> Avail</label>
+      <button onclick="saveProd(${p.id})" class="text-xs bg-brand-600 text-white px-2 py-1 rounded">Save</button>
+    </div>`).join('');
+}
+async function saveProd(id){
+  const body={price:+document.getElementById('pr-'+id).value, mrp:+document.getElementById('mrp-'+id).value,
+    stock:+document.getElementById('st-'+id).value, available:document.getElementById('av-'+id).checked};
+  await fetch(API+'/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  alert('Saved');
+}
+
+async function loadSettings(){
+  const s=await fetch(API+'/api/settings').then(r=>r.json());
+  document.getElementById('set-min').value=s.min_order;
+  document.getElementById('set-del').value=s.delivery_charge;
+  document.getElementById('set-free').value=s.free_delivery_above;
+  document.getElementById('set-pct').value=s.offer_percent;
+  document.getElementById('set-omin').value=s.offer_min;
+  document.getElementById('set-otxt').value=s.offer_text||'';
+  document.getElementById('set-phone').value=s.helpline||'';
+  document.getElementById('set-email').value=s.email||'';
+}
+async function saveSettings(){
+  const body={
+    min_order:document.getElementById('set-min').value,
+    delivery_charge:document.getElementById('set-del').value,
+    free_delivery_above:document.getElementById('set-free').value,
+    offer_percent:document.getElementById('set-pct').value,
+    offer_min:document.getElementById('set-omin').value,
+    offer_text:document.getElementById('set-otxt').value,
+    helpline:document.getElementById('set-phone').value,
+    email:document.getElementById('set-email').value
+  };
+  await fetch(API+'/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  alert('Settings saved');
+}
+
+async function loadRatings(){
+  const rows=await fetch(API+'/api/ratings').then(r=>r.json());
+  const box=document.getElementById('rate-box');
+  if(!rows.length){box.innerHTML='<p class="text-gray-400">No ratings yet</p>';return;}
+  box.innerHTML=rows.map(r=>`
+    <div class="border rounded-lg p-2">
+      <div class="flex justify-between"><span class="font-medium">${r.product_name}</span><span class="text-yellow-500">${'★'.repeat(+r.rating)}${'☆'.repeat(5-+r.rating)}</span></div>
+      <p class="text-xs text-gray-500">${r.name||'User'} · ${r.phone} · ${r.created_at}</p>
+      <p class="text-xs mt-1">${r.comment||''}</p>
+    </div>`).join('');
+}
+
+load();
+setInterval(load, 12000);
+</script>
+</body>
+</html>
